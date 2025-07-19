@@ -20,7 +20,7 @@ jobs:
 
       - name: Deploy to EC2
         run: |
-          ssh -o StrictHostKeyChecking=no ubuntu@orth-1.compute.amazonaws.com@13.61.176.157<< 'EOF'
+          ssh -o StrictHostKeyChecking=no ubuntu@13.61.176.157<< 'EOF'
             aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin 105014798391.dkr.ecr.eu-north-1.amazonaws.com
 
             docker pull 105014798391.dkr.ecr.eu-north-1.amazonaws.com/optiquant:latest
