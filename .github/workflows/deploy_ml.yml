@@ -1,63 +1,50 @@
-name: Deploy to EC2 with Docker and ECR
+name: Deploy to EC2
 
 on:
   push:
     branches:
-      - main  # or your deployment branch
+      - main  # ✅ Replace if your main branch has a different name
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      ECR_REGISTRY: <your_account_id>.dkr.ecr.<your-region>.amazonaws.com
-      ECR_REPOSITORY: optiquant
-      IMAGE_TAG: latest
-      CONTAINER_NAME: optiquant
-
     steps:
-    - name: 🔄 Checkout repo
+    - name: 🧾 Checkout code
       uses: actions/checkout@v3
 
-    - name: 🐍 Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.x
+    - name: 🐳 Set up Docker
+      uses: docker/setup-buildx-action@v3
 
     - name: 🔐 Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: <your-region>  # e.g. ap-south-1
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}  # ✅ Create this secret in your repo
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # ✅ Same as above
+        aws-region: eu-north-1  # ✅ Replace with your AWS region (e.g., us-east-1, ap-south-1)
 
-    - name: 🐳 Log in to Amazon ECR
+    - name: 📦 Log in to Amazon ECR
       id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+      uses: aws-actions/amazon-ecr-login@v1
 
-    - name: 📦 Build, tag, and push Docker image to ECR
+    - name: 🔨 Build and push Docker image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: optiquant  # ✅ Replace with your ECR repo name
+        IMAGE_TAG: latest
       run: |
-        docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
-        docker tag $ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-    - name: 🔐 Set up SSH for EC2 access
-      uses: webfactory/ssh-agent@v0.9.0
+    - name: 🚀 Deploy to EC2 via SSH
+      uses: appleboy/ssh-action@v1.0.3
       with:
-        ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
-
-    - name: 🚀 Deploy on EC2
-      run: |
-        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << EOF
-          docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-          # Stop and remove old container if running
-          docker rm -f $CONTAINER_NAME || true
-
-          # Run container on port 8501
-          docker run -d -p 8501:8501 \
-            --name $CONTAINER_NAME \
-            --restart always \
-            $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        EOF
+        host: ${{ secrets.EC2_HOST }}  # ✅ Your EC2 public IP
+        username: ubuntu  # ✅ Usually "ubuntu" for Ubuntu EC2 AMIs
+        key: ${{ secrets.EC2_SSH_KEY }}  # ✅ Your PEM private key, add it as GitHub Secret with BEGIN/END lines
+        script: |
+          aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+          docker pull ${{ steps.login-ecr.outputs.registry }}/optiquant:latest
+          docker stop optiquant || true && docker rm optiquant || true
+          docker run -d -p 8501:8501 --name optiquant ${{ steps.login-ecr.outputs.registry }}/optiquant:latest
 
