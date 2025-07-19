@@ -50,7 +50,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: wu-north-1 # Replace with your AWS region
+          aws-region: eu-north-1 # Replace with your AWS region
 
       - name: Render Amazon ECS task definition
         id: render-task-def
