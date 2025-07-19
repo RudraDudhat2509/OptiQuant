@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 
-
 def compute_rsi(series: pd.Series, window: int = 14):
     """Computes the Relative Strength Index (RSI)."""
     delta = series.diff()
