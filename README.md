@@ -7,7 +7,7 @@
 
 ### 🚀 Live Demo
 
-**[Insert Your Streamlit Community Cloud Link Here]**
+(http://13.61.176.157:8501)
 
 ---
 
@@ -112,8 +112,6 @@ To run this project on your local machine:
 ---
 
 ### 🖼️ Screenshots
-
-*(Placeholder: Insert screenshots of your app here to showcase the UI)*
 **UI** 
 <img width="2239" height="1248" alt="image" src="https://github.com/user-attachments/assets/25572489-43fa-4d1c-9495-877826bc63c7" />
 
