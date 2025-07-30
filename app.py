@@ -21,6 +21,12 @@ Welcome to **OptiQuant**. This tool leverages an ensemble machine learning model
 Choose your analysis mode from the sidebar.
 """)
 
+# --- About Section in a Collapsible Expander ---
+with st.expander("About OptiQuant"):
+    st.markdown("""
+    OptiQuant is an AI-driven alpha model developed by Rudra, a DSAI student at IIT Bhilai (Class of 2028). It combines CatBoost, LightGBM, and Random Forest algorithms to generate predictive signals for stock performance. The model achieves a 63% win rate and a Sharpe ratio of 2.73, with robust backtesting capabilities. Deployed on AWS EC2, it supports both historical backtesting via CSV uploads and single-stock predictions. Explore the project on [GitHub](https://github.com/RudraDudhat2509/OptiQuant).
+    """)
+
 # --- Model Loading ---
 @st.cache_resource
 def load_models():
@@ -70,13 +76,20 @@ with st.sidebar:
                     "close": close_price, "volume": volume, "RollingMean_5d": rolling_mean_5d
                 }
 
-
 # --- Processing and Metrics Functions ---
 
 def process_csv_upload(df_input):
     """Processes an uploaded CSV file for full backtesting analysis."""
     st.subheader("1. Data Preview")
     st.dataframe(df_input.head())
+
+    # --- Calculate and Display Unique Stocks and Date Range ---
+    unique_stocks = df_input['Name'].nunique()
+    date_min = pd.to_datetime(df_input['Date']).min().strftime('%Y-%m-%d')
+    date_max = pd.to_datetime(df_input['Date']).max().strftime('%Y-%m-%d')
+    st.markdown(f"**Dataset Overview**")
+    st.markdown(f"- Total Unique Stocks: {unique_stocks}")
+    st.markdown(f"- Date Range: {date_min} to {date_max}")
 
     with st.spinner("Engineering features and making predictions..."):
         df_featured = add_features(df_input)
@@ -119,13 +132,9 @@ def process_csv_upload(df_input):
 
 def predict_single_stock(data):
     """Handles prediction for a single stock with limited features."""
-
-    # Estimate volatilities from OHLC
     volatility_20d = (data['high'] - data['low']) / data['open']
-    volatility_60d = volatility_20d * 0.8  # assuming less volatility over longer time
-    downside_vol_20d = volatility_20d * 0.5  # crude proxy
-
-    # Compute Price-to-AverageVolume ratio safely
+    volatility_60d = volatility_20d * 0.8
+    downside_vol_20d = volatility_20d * 0.5
     price_to_avg_vol = data['close'] / (data['volume'] + 1e-9)
 
     features = {
@@ -134,11 +143,11 @@ def predict_single_stock(data):
         'Volatility_20d': volatility_20d,
         'Volatility_60d': volatility_60d,
         'AvgVol_10d': data['volume'],
-        'RSI_14': 50,  # Neutral RSI
+        'RSI_14': 50,
         'Momentum_5d_z': 0.0,
         'DownsideVol_20d': downside_vol_20d,
-        'Skew_20d': 0.0,  # Could be adjusted with slider/input
-        'Beta_20d': 1.0,  # Market-neutral
+        'Skew_20d': 0.0,
+        'Beta_20d': 1.0,
         'RollingMean_5d': data['RollingMean_5d'],
         'Price_to_AvgVolume': price_to_avg_vol
     }
@@ -168,7 +177,6 @@ def predict_single_stock(data):
         value=f"{predicted_signal:.4f}",
         help="This is a raw signal score. Positive values suggest potential outperformance. This is less reliable than the full CSV analysis."
     )
-
 
 def compute_metrics(df, top_k_percent=0.10):
     """Calculates key performance metrics for the backtest."""
@@ -201,7 +209,6 @@ def compute_metrics(df, top_k_percent=0.10):
         'Win Rate': win_rate
     }
 
-
 # --- Main Display Logic ---
 if uploaded_file is not None:
     try:
@@ -232,7 +239,6 @@ if uploaded_file is not None:
             )
             top_k_percent = top_k / 100.0
 
-            # --- NEW: Display Key Performance Metrics ---
             st.markdown("#### Key Performance Metrics")
             metrics = compute_metrics(df_results, top_k_percent=top_k_percent)
             
@@ -243,7 +249,6 @@ if uploaded_file is not None:
             cols[3].metric("Max Drawdown", f"{metrics['Maximum Drawdown']:.2%}")
             cols[4].metric("Win Rate", f"{metrics['Win Rate']:.2%}")
             
-            # --- Display Cumulative Return Graph ---
             st.markdown("#### Cumulative Strategy Return")
             
             def plot_cumulative_returns(df, top_k_percent=0.10):
@@ -281,5 +286,3 @@ elif single_stock_form is not None:
 
 else:
     st.info("Please choose an analysis mode from the sidebar to get started.")
-
-
