@@ -179,27 +179,34 @@ def predict_single_stock(data):
     )
 
 def compute_metrics(df, top_k_percent=0.10):
-    """Calculates key performance metrics for the backtest."""
+    """Calculates key performance metrics, mathematically adjusted for 5-day holding periods."""
     df = df.copy()
 
-    daily_returns = (
+    # Calculate the raw 5-day target return for the top portfolio
+    portfolio_5d_returns = (
         df.groupby('Date')
         .apply(lambda x: x.sort_values('RankedSignal', ascending=False)
                         .head(int(len(x) * top_k_percent))['Target'].mean())
     ).dropna()
 
-    if daily_returns.empty:
+    if portfolio_5d_returns.empty:
         return {metric: 0 for metric in ['Sharpe Ratio', 'Calmar Ratio', 'Maximum Drawdown', 'CAGR', 'Win Rate']}
+
+    # CRITICAL FIX: Approximate the daily return from the 5-day holding period 
+    # to prevent overlapping geometric compounding explosion.
+    daily_returns = (1 + portfolio_5d_returns) ** (1/5) - 1
 
     cumulative_returns = (1 + daily_returns).cumprod()
     max_drawdown = (cumulative_returns / cumulative_returns.cummax() - 1).min()
+    
+    # Sharpe ratio is scaled by sqrt(252) for daily data
     sharpe_ratio = daily_returns.mean() / (daily_returns.std() + 1e-9) * np.sqrt(252)
     
     total_days = len(daily_returns)
     cagr = cumulative_returns.iloc[-1]**(252/total_days) - 1 if total_days > 0 else 0
     
     calmar_ratio = cagr / abs(max_drawdown + 1e-9) if max_drawdown != 0 else np.inf
-    win_rate = (daily_returns > 0).mean()
+    win_rate = (portfolio_5d_returns > 0).mean() # Win rate is still based on the actual 5-day trade
 
     return {
         'Sharpe Ratio': sharpe_ratio,
@@ -286,3 +293,4 @@ elif single_stock_form is not None:
 
 else:
     st.info("Please choose an analysis mode from the sidebar to get started.")
+
