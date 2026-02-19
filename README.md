@@ -18,7 +18,7 @@
 
 <br/>
 
-🔴 **[Live Demo →](http://13.61.176.157:8501)**
+🔴 **[Live Demo →](https://optiquant.streamlit.app/)**
 
 </div>
 
