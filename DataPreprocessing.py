@@ -18,8 +18,7 @@ def downside_vol(x):
 
 def add_features(df):
     """
-    Engineers all necessary features for the stock data.
-    This function takes a raw dataframe and returns it with all predictive features.
+    Engineers all necessary predictive features without data leakage.
     """
     df = df.copy()
     df = df.sort_values(['Name', 'Date'])
@@ -48,19 +47,22 @@ def add_features(df):
 
     df = df.groupby('Name', group_keys=False).apply(build_features)
     
-    # --- Cross-sectional Feature ---
+    # --- Cross-sectional Features ---
     if not df.empty:
         df['Momentum_5d_z'] = df.groupby('Date')['Momentum_5d'].transform(lambda x: (x - x.mean()) / (x.std() + 1e-9))
 
-    # --- Target and Market-related Features ---
+    # --- HISTORICAL Market Calculation (NO LEAKAGE) ---
+    df['HistoricalMarketReturn'] = df.groupby('Date')['Ret_1d'].transform('mean')
+
+    df['Beta_20d'] = df.groupby('Name', group_keys=False).apply(
+        lambda group: group['Ret_1d'].rolling(20).corr(group['HistoricalMarketReturn'])
+    ).reset_index(drop=True)
+
+    # --- Target Calculation ---
+    # Target is strictly separated from feature calculation
     df['Target'] = df.groupby('Name')['close'].shift(-5) / df['close'] - 1
     df['Target'] = df['Target'].clip(-0.15, 0.15) 
     df['Target_demeaned'] = df.groupby('Date')['Target'].transform(lambda x: x - x.mean())
-    df['MarketReturn'] = df.groupby('Date')['Target'].transform('mean')
-
-    df['Beta_20d'] = df.groupby('Name', group_keys=False).apply(
-        lambda group: group['Target'].rolling(20).corr(group['MarketReturn'])
-    ).reset_index(drop=True)
-
 
     return df
+
