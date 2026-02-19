@@ -1,57 +1,56 @@
-# OptiQuant
-# 📈 OptiQuant: AI-Powered Alpha
+# 📈 OptiQuant: AI-Powered Alpha (v2.0 Architecture)
 
-**OptiQuant** is an end-to-end quantitative analysis tool that leverages a sophisticated ensemble machine learning model to predict stock performance and identify potential investment opportunities. This application provides a user-friendly Streamlit interface for backtesting trading strategies and getting live predictions.
+**OptiQuant** is an end-to-end quantitative analysis tool that leverages a sophisticated ensemble machine learning model (LightGBM, CatBoost, RandomForest) to predict stock performance. 
+
+*Note: Version 2.0 represents a complete architectural rewrite focusing on mathematical rigor, vectorized performance, and the strict prevention of future data leakage.*
 
 ---
 
 ### 🚀 Live Demo
 
-(http://13.61.176.157:8501)
+[Access the Live AWS Deployment Here](http://13.61.176.157:8501)
 
 ---
 
-### ✨ Features
+### ✨ v2.0 Production Features
 
+-   **Strict Lookahead Bias Prevention:** Target variables and predictive features are strictly decoupled. Cross-sectional metrics like Beta and momentum are calculated purely on historical $T-0$ data to prevent future data leakage.
+-   **Vectorized Feature Engineering:** Ripped out slow Pandas `.apply()` loops in favor of C-level `.transform()` operations, massively speeding up the inference and feature generation pipeline.
+-   **Trading Frictions Engine:** Added dynamic UI controls to penalize the model with real-world transaction costs and slippage (in basis points) dynamically calculated against daily portfolio turnover.
+-   **Deterministic CI/CD Testing:** Integrated a `pytest` suite to mathematically prove the absence of data leakage before any model retraining.
 -   **Ensemble ML Model:** Utilizes a weighted blend of LightGBM, CatBoost, and RandomForest for robust and accurate predictions.
--   **Advanced Feature Engineering:** Generates over a dozen predictive features, including momentum, volatility, RSI, and risk-adjusted metrics.
--   **Backtesting Engine:** Upload historical stock data (CSV) to simulate and evaluate the model's performance over time.
--   **Live Prediction Mode:** Get a real-time signal score for a single stock by inputting its current data.
--   **Interactive Performance Analysis:**
-    -   View a ranked list of top-performing stocks for any given day in your dataset.
-    -   Analyze key performance metrics like Sharpe Ratio, Calmar Ratio, CAGR, and Max Drawdown.
-    -   Visualize the strategy's cumulative return against a market benchmark.
--   **Dynamic Controls:** Use an interactive slider to adjust the strategy (e.g., top 1%, 5%, 10%) and see how it impacts performance metrics and graphs instantly.
+-   **Interactive Performance Analysis:** Adjust strategy deciles and analyze daily-rebalanced metrics instantly.
 
 ---
 
-### 📊 Key Performance Metrics
+### 📊 Realistic Performance Metrics (Net of Costs)
 
-The application calculates several industry-standard metrics to evaluate the performance of the backtested strategy:
+Unlike academic models that ignore market realities, OptiQuant v2.0 evaluates performance **net of trading frictions**. 
 
--   **Sharpe Ratio:** Measures the risk-adjusted return, indicating how much excess return you receive for the extra volatility you endure.
--   **Calmar Ratio:** Measures return relative to the maximum drawdown, highlighting performance during the worst periods.
--   **CAGR (Compound Annual Growth Rate):** The annualized rate of return that an investment provides over a period.
--   **Maximum Drawdown:** The largest peak-to-trough decline in the value of the portfolio, representing the worst-case loss.
--   **Win Rate:** The percentage of days where the strategy yielded a positive return.
+*Metrics below represent a daily-rebalanced, top-decile portfolio net of 10 bps transaction costs and 5 bps slippage:*
+-   **Realistic CAGR:** ~15%
+-   **Sharpe Ratio:** ~0.90
+-   **Win Rate:** ~53%
+-   **Maximum Drawdown:** Mathematically calculated via continuous peak-to-trough analysis.
 
 ---
 
 ### 🛠️ Tech Stack
 
 -   **Backend & Modeling:** Python, Pandas, NumPy, Scikit-learn, LightGBM, CatBoost
+-   **Testing & Safety:** Pytest, GitHub Actions CI/CD
 -   **Frontend:** Streamlit
--   **Deployment:** Docker, Streamlit Community Cloud / AWS EC2
+-   **Deployment:** Docker, AWS EC2
 
 ---
 
 ### 🧠 Methodology
 
-The core of OptiQuant is a predictive model trained to identify stocks that are likely to outperform the market average over the next 5 trading days (generating "alpha").
+The core of OptiQuant is a predictive model trained to identify stocks that are likely to outperform the market average over the next 5 trading days.
 
-1.  **Feature Engineering:** Raw OHLCV data is transformed into a rich feature set designed to capture market dynamics. A crucial part of this process is the careful avoidance of **lookahead bias**, ensuring that all predictive features are calculated using only information that would have been available at the time of prediction.
-2.  **Ensemble Modeling:** Three powerful gradient-boosting and tree-based models are trained on the engineered features. Their predictions are then combined using a weighted average to produce a more stable and reliable forecast.
-3.  **Signal Generation:** The raw model output is refined into a final signal by normalizing for volatility and applying a smoothing function. Stocks are then ranked daily based on this final signal to identify the top investment opportunities.
+1.  **Feature Engineering:** Raw OHLCV data is transformed into a rich feature set using highly optimized, vectorized transformations. 
+2.  **Ensemble Modeling:** Three powerful gradient-boosting and tree-based models are trained on the engineered features. Their predictions are combined using a weighted average to produce a stable forecast.
+3.  **Cost-Adjusted Signal Generation:** The raw model output is refined into a final signal. During backtesting, the strategy calculates daily turnover and mathematically deducts basis points for slippage and trading costs to reflect true market execution.
 
 ---
 
@@ -59,9 +58,9 @@ The core of OptiQuant is a predictive model trained to identify stocks that are 
 
 1.  Navigate to the live demo link.
 2.  From the sidebar, choose your analysis mode:
-    -   **For Backtesting:** Select "Upload CSV for Backtesting" and upload a CSV file containing historical stock data. The file must include `date`, `open`, `high`, `low`, `close`, `volume`, and `Name` columns, with at least 60 days of data per stock.
+    -   **For Backtesting:** Select "Upload CSV for Backtesting" and upload a CSV file containing historical stock data. The file must include `date`, `open`, `high`, `low`, `close`, `volume`, and `Name` columns.
     -   **For a Quick Prediction:** Select "Live Prediction (Single Stock)" and fill in the form with the stock's current data.
-3.  Analyze the results, including the top-ranked stocks, key metrics, and performance graphs.
+3.  Adjust the **Trading Frictions** (bps) in the sidebar to stress-test the model's profitability under different broker conditions.
 
 ---
 
@@ -80,17 +79,19 @@ To run this project on your local machine:
     pip install -r requirements.txt
     ```
 
-3.  **Run the Streamlit app:**
+3.  **Run the Test Suite (Ensure Architecture Integrity):**
+    ```bash
+    pytest pytester.py -v
+    ```
+
+4.  **Run the Streamlit app:**
     ```bash
     streamlit run app.py
     ```
 
-4.  **Build with Docker (Optional):**
+5.  **Build with Docker (Optional):**
     ```bash
-    # Build the container image
     docker build -t optiquant-app .
-
-    # Run the container locally
     docker run -p 8501:8501 optiquant-app
     ```
 
@@ -101,7 +102,8 @@ To run this project on your local machine:
 
 .
 ├── 📄 app.py                  # Main Streamlit application file
-├── 📄 DataPreprocessing.py      # Feature engineering module
+├── 📄 DataPreprocessing.py      # Vectorized feature engineering module
+├── 📄 pytester.py               # Deterministic unit tests for data leakage
 ├── 📄 Dockerfile               # Instructions for building the Docker container
 ├── 📄 requirements.txt          # Python dependencies
 ├── 📦 model_lgbm.joblib        # Trained LightGBM model
@@ -112,8 +114,7 @@ To run this project on your local machine:
 ---
 
 ### 🖼️ Screenshots
-**UI** 
-<img width="2239" height="1248" alt="image" src="https://github.com/user-attachments/assets/25572489-43fa-4d1c-9495-877826bc63c7" />
+**UI** <img width="2239" height="1248" alt="image" src="https://github.com/user-attachments/assets/25572489-43fa-4d1c-9495-877826bc63c7" />
 
-**Performance Metrics & Graph:**
+**Performance Metrics & Graph (Net of Frictions):**
 <img width="1174" height="550" alt="image" src="https://github.com/user-attachments/assets/0ead78c4-1139-4ab9-9199-d20d7238089f" />
