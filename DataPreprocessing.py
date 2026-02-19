@@ -24,7 +24,7 @@ def add_features(df):
     Engineers all necessary predictive features without data leakage.
     """
     df = df.copy()
-    df = df.sort_values(['Name', 'Date'])
+    df = df.sort_values(['Name', 'Date']).reset_index(drop=True)
 
     def build_features(group):
         # --- Momentum Features ---
@@ -59,11 +59,12 @@ def add_features(df):
     # --- HISTORICAL Market Calculation (NO LEAKAGE) ---
     df['HistoricalMarketReturn'] = df.groupby('Date')['Ret_1d'].transform('mean')
 
-    # ✅ FIXED: use reset_index(level=0, drop=True) to preserve original
-    # row indices so the beta values align correctly back onto df
-    df['Beta_20d'] = df.groupby('Name', group_keys=False).apply(
-        lambda group: group['Ret_1d'].rolling(20).corr(group['HistoricalMarketReturn'])
-    ).reset_index(level=0, drop=True)
+    # --- Beta Calculation (bulletproof explicit loop — avoids MultiIndex issues entirely) ---
+    beta_values = []
+    for name, group in df.groupby('Name'):
+        beta = group['Ret_1d'].rolling(20).corr(group['HistoricalMarketReturn'])
+        beta_values.append(beta)
+    df['Beta_20d'] = pd.concat(beta_values).reindex(df.index)
 
     # --- Target Calculation ---
     # Target is strictly separated from feature calculation
