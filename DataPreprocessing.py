@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 
-
 def compute_rsi(series: pd.Series, window: int = 14):
     """Computes the Relative Strength Index (RSI)."""
     delta = series.diff()
@@ -12,44 +11,41 @@ def compute_rsi(series: pd.Series, window: int = 14):
     rs = avg_gain / (avg_loss + 1e-9)
     return 100 - (100 / (1 + rs))
 
-
 def downside_vol(x):
     """Computes downside volatility."""
     x = x.dropna()
     return np.sqrt(np.mean(np.square(np.minimum(x, 0)))) if len(x) > 0 else np.nan
 
-
 def add_features(df):
     """
     Engineers all necessary predictive features without data leakage.
+    Refactored to use high-performance vectorized transforms, silencing Pandas FutureWarnings.
     """
     df = df.copy()
-    df = df.sort_values(['Name', 'Date']).reset_index(drop=True)
+    df = df.sort_values(['Name', 'Date'])
 
-    def build_features(group):
-        # --- Momentum Features ---
-        group['Ret_1d'] = group['close'].pct_change()
-        group['Momentum_5d'] = group['close'].pct_change(periods=5)
-        group['Momentum_10d'] = group['close'].pct_change(periods=10)
+    # Create a groupby object once to reuse across vectorized transformations
+    grouped = df.groupby('Name')
 
-        # --- Volatility Features ---
-        group['Volatility_20d'] = group['Ret_1d'].rolling(20).std()
-        group['Volatility_60d'] = group['Ret_1d'].rolling(60).std()
-        group['DownsideVol_20d'] = group['Ret_1d'].rolling(20).apply(downside_vol, raw=False)
+    # --- Momentum Features ---
+    df['Ret_1d'] = grouped['close'].pct_change()
+    df['Momentum_5d'] = grouped['close'].pct_change(periods=5)
+    df['Momentum_10d'] = grouped['close'].pct_change(periods=10)
 
-        # --- Volume and Liquidity Features ---
-        group['AvgVol_10d'] = group['volume'].rolling(10).mean()
-        group['Price_to_AvgVolume'] = group['close'] / (group['volume'].rolling(10).mean() + 1e-9)
+    # --- Volatility Features ---
+    df['Volatility_20d'] = grouped['Ret_1d'].transform(lambda x: x.rolling(20).std())
+    df['Volatility_60d'] = grouped['Ret_1d'].transform(lambda x: x.rolling(60).std())
+    df['DownsideVol_20d'] = grouped['Ret_1d'].transform(lambda x: x.rolling(20).apply(downside_vol, raw=False))
 
-        # --- Technical Indicators ---
-        group['RSI_14'] = compute_rsi(group['close'], window=14)
-        group['Skew_20d'] = group['Ret_1d'].rolling(20).skew()
-        group['RollingMean_5d'] = group['close'].rolling(5).mean()
+    # --- Volume and Liquidity Features ---
+    df['AvgVol_10d'] = grouped['volume'].transform(lambda x: x.rolling(10).mean())
+    df['Price_to_AvgVolume'] = df['close'] / (df['AvgVol_10d'] + 1e-9)
 
-        return group
-
-    df = df.groupby('Name', group_keys=False).apply(build_features)
-
+    # --- Technical Indicators ---
+    df['RSI_14'] = grouped['close'].transform(lambda x: compute_rsi(x, window=14))
+    df['Skew_20d'] = grouped['Ret_1d'].transform(lambda x: x.rolling(20).skew())
+    df['RollingMean_5d'] = grouped['close'].transform(lambda x: x.rolling(5).mean())
+    
     # --- Cross-sectional Features ---
     if not df.empty:
         df['Momentum_5d_z'] = df.groupby('Date')['Momentum_5d'].transform(
@@ -59,17 +55,17 @@ def add_features(df):
     # --- HISTORICAL Market Calculation (NO LEAKAGE) ---
     df['HistoricalMarketReturn'] = df.groupby('Date')['Ret_1d'].transform('mean')
 
-    # --- Beta Calculation (bulletproof explicit loop — avoids MultiIndex issues entirely) ---
-    beta_values = []
-    for name, group in df.groupby('Name'):
-        beta = group['Ret_1d'].rolling(20).corr(group['HistoricalMarketReturn'])
-        beta_values.append(beta)
-    df['Beta_20d'] = pd.concat(beta_values).reindex(df.index)
+    # --- Beta Calculation (Warning Fixed) ---
+    # We explicitly pass include_groups=False to silence the Pandas deprecation warning
+    # while calculating the rolling correlation across two distinct columns.
+    df['Beta_20d'] = df.groupby('Name', group_keys=False).apply(
+        lambda g: g['Ret_1d'].rolling(20).corr(g['HistoricalMarketReturn']),
+        include_groups=False
+    )
 
     # --- Target Calculation ---
-    # Target is strictly separated from feature calculation
-    df['Target'] = df.groupby('Name')['close'].shift(-5) / df['close'] - 1
-    df['Target'] = df['Target'].clip(-0.15, 0.15)
+    df['Target'] = grouped['close'].shift(-5) / df['close'] - 1
+    df['Target'] = df['Target'].clip(-0.15, 0.15) 
     df['Target_demeaned'] = df.groupby('Date')['Target'].transform(lambda x: x - x.mean())
 
     return df
