@@ -4,22 +4,30 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 from datetime import datetime, date
+
+# Import the feature engineering function from your separate file
 from DataPreprocessing import add_features
+
+# --- App Configuration and Title ---
 st.set_page_config(
     page_title="OptiQuant Alpha Predictor",
-    page_icon="",
+    page_icon="📈",
     layout="wide"
 )
 
-st.title("OptiQuant: ML-Powered Alpha")
+st.title("📈 OptiQuant: AI-Powered Alpha")
 st.markdown("""
 Welcome to **OptiQuant**. This tool leverages an ensemble machine learning model to predict stock performance.
 Choose your analysis mode from the sidebar.
 """)
+
+# --- About Section in a Collapsible Expander ---
 with st.expander("About OptiQuant"):
     st.markdown("""
     OptiQuant is an AI-driven alpha model developed by Rudra, a DSAI student at IIT Bhilai (Class of 2028). It combines CatBoost, LightGBM, and Random Forest algorithms to generate predictive signals for stock performance. The model achieves a 63% win rate and a Sharpe ratio of 2.73, with robust backtesting capabilities. Deployed on AWS EC2, it supports both historical backtesting via CSV uploads and single-stock predictions. Explore the project on [GitHub](https://github.com/RudraDudhat2509/OptiQuant).
     """)
+
+# --- Model Loading ---
 @st.cache_resource
 def load_models():
     """Loads the pre-trained model files."""
@@ -372,3 +380,4 @@ elif single_stock_form is not None:
 
 else:
     st.info("Please choose an analysis mode from the sidebar to get started.")
+
