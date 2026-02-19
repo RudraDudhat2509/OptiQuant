@@ -4,30 +4,22 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 from datetime import datetime, date
-
-# Import the feature engineering function from your separate file
 from DataPreprocessing import add_features
-
-# --- App Configuration and Title ---
 st.set_page_config(
     page_title="OptiQuant Alpha Predictor",
-    page_icon="📈",
+    page_icon="",
     layout="wide"
 )
 
-st.title("📈 OptiQuant: AI-Powered Alpha")
+st.title("OptiQuant: ML-Powered Alpha")
 st.markdown("""
 Welcome to **OptiQuant**. This tool leverages an ensemble machine learning model to predict stock performance.
 Choose your analysis mode from the sidebar.
 """)
-
-# --- About Section in a Collapsible Expander ---
 with st.expander("About OptiQuant"):
     st.markdown("""
     OptiQuant is an AI-driven alpha model developed by Rudra, a DSAI student at IIT Bhilai (Class of 2028). It combines CatBoost, LightGBM, and Random Forest algorithms to generate predictive signals for stock performance. The model achieves a 63% win rate and a Sharpe ratio of 2.73, with robust backtesting capabilities. Deployed on AWS EC2, it supports both historical backtesting via CSV uploads and single-stock predictions. Explore the project on [GitHub](https://github.com/RudraDudhat2509/OptiQuant).
     """)
-
-# --- Model Loading ---
 @st.cache_resource
 def load_models():
     """Loads the pre-trained model files."""
@@ -48,11 +40,16 @@ with st.sidebar:
         ("Upload CSV for Backtesting", "Live Prediction (Single Stock)")
     )
 
+    # Transaction cost and slippage controls (basis points per side)
+    st.subheader("Trading Frictions")
+    tc_bps = st.number_input("Transaction cost (bps per side)", min_value=0, max_value=200, value=10)
+    slip_bps = st.number_input("Slippage (bps per side)", min_value=0, max_value=200, value=5)
+
     uploaded_file = None
     single_stock_form = None
 
     if input_method == "Upload CSV for Backtesting":
-        uploaded_file = st.file_uploader("Upload your stock data CSV", type=["csv"])
+        uploaded_file = st.file_uploader("Upload your stock data CSV", type=["csv"]) 
     else:
         st.subheader("Enter Live Stock Data")
         st.warning("This mode provides a rough estimate as it cannot calculate historical features (e.g., momentum, volatility). For full analysis, please use the CSV upload.")
@@ -105,6 +102,10 @@ def process_csv_upload(df_input):
             st.warning("The uploaded CSV file does not contain enough historical data for each stock to calculate all necessary features (e.g., 60-day volatility). Please provide a file with at least 60 trading days of data for each stock.")
             return None
 
+        # Compute forward next-day return for daily rebalanced backtest
+        df_predict = df_predict.sort_values(["Name", "Date"]) 
+        df_predict['Forward1D'] = df_predict.groupby('Name')['close'].shift(-1) / df_predict['close'] - 1
+
         X_predict = df_predict[feature_cols]
 
         model1, model2, model3 = load_models()
@@ -126,6 +127,9 @@ def process_csv_upload(df_input):
         smoothed = df_predict.groupby('Name')['PredictedReturn'].transform(lambda x: x.rolling(5, min_periods=1).mean())
         df_predict['FinalSignal'] = smoothed
         df_predict['RankedSignal'] = df_predict.groupby('Date')['FinalSignal'].rank(pct=True)
+
+        # Drop rows without forward next-day return (last date for each name)
+        df_predict = df_predict.dropna(subset=['Forward1D'])
 
     st.success("Analysis complete!")
     return df_predict
@@ -178,7 +182,87 @@ def predict_single_stock(data):
         help="This is a raw signal score. Positive values suggest potential outperformance. This is less reliable than the full CSV analysis."
     )
 
-def compute_metrics(df, top_k_percent=0.10):
+def _compute_daily_gross_returns(df: pd.DataFrame, top_k_percent: float) -> pd.Series:
+    df = df.copy()
+    daily_returns = (
+        df.groupby('Date')
+        .apply(lambda x: x.sort_values('RankedSignal', ascending=False)
+                        .head(max(1, int(len(x) * top_k_percent)))['Forward1D'].mean())
+    ).dropna()
+    return daily_returns
+
+def _compute_daily_turnover(df: pd.DataFrame, top_k_percent: float) -> pd.Series:
+    df = df.copy()
+    df['Date'] = pd.to_datetime(df['Date'])
+    # Determine selected tickers per day
+    selected = (
+        df.sort_values(['Date', 'RankedSignal'], ascending=[True, False])
+          .groupby('Date')
+          .apply(lambda x: set(x.head(max(1, int(len(x) * top_k_percent)))['Name']))
+    )
+    selected = selected.sort_index()
+    dates = selected.index.tolist()
+    turnover = []
+    for i, d in enumerate(dates):
+        if i == 0:
+            turnover.append(0.0)
+            continue
+        prev_set = selected[dates[i-1]]
+        curr_set = selected[d]
+        denom = max(1.0, (len(prev_set) + len(curr_set)) / 2.0)
+        overlap = len(prev_set.intersection(curr_set))
+        change_frac = 1.0 - (overlap / denom)
+        turnover.append(change_frac)
+    return pd.Series(turnover, index=dates)
+
+def _apply_costs_to_returns(daily_gross: pd.Series, daily_turnover: pd.Series, tc_bps: float, slip_bps: float) -> pd.Series:
+    # Cost per side in fraction
+    per_side_cost = (tc_bps + slip_bps) * 1e-4
+    # Total traded notional fraction per day approximated as 2 * turnover (sell + buy)
+    traded_notional_frac = 2.0 * daily_turnover.reindex(daily_gross.index).fillna(0.0)
+    cost_frac = per_side_cost * traded_notional_frac
+    daily_net = daily_gross - cost_frac
+    return daily_net
+
+def compute_metrics(df, top_k_percent=0.10, tc_bps=10.0, slip_bps=5.0):
+    """
+    Calculates key performance metrics based on daily rebalanced net returns.
+    Ensures metrics perfectly match the plotted cumulative return graph.
+    """
+    df = df.copy()
+
+    # 1. Calculate Gross Daily Returns
+    daily_gross = _compute_daily_gross_returns(df, top_k_percent)
+
+    if daily_gross.empty:
+        return {metric: 0 for metric in ['Sharpe Ratio', 'Calmar Ratio', 'Maximum Drawdown', 'CAGR', 'Win Rate']}
+
+    # 2. Calculate Turnover and Apply Trading Frictions
+    daily_turnover = _compute_daily_turnover(df, top_k_percent)
+    daily_net = _apply_costs_to_returns(daily_gross, daily_turnover, tc_bps, slip_bps)
+
+    # 3. Compute Standard Quant Metrics on the Net Array
+    cumulative_returns = (1 + daily_net).cumprod()
+    max_drawdown = (cumulative_returns / cumulative_returns.cummax() - 1).min()
+    
+    # Sharpe ratio is scaled by sqrt(252) for daily data
+    sharpe_ratio = daily_net.mean() / (daily_net.std() + 1e-9) * np.sqrt(252)
+    
+    total_days = len(daily_net)
+    cagr = cumulative_returns.iloc[-1]**(252/total_days) - 1 if total_days > 0 else 0
+    
+    calmar_ratio = cagr / abs(max_drawdown + 1e-9) if max_drawdown != 0 else np.inf
+    
+    # Win rate is strictly the percentage of days the net strategy made money
+    win_rate = (daily_net > 0).mean()
+
+    return {
+        'Sharpe Ratio': sharpe_ratio,
+        'Calmar Ratio': calmar_ratio,
+        'Maximum Drawdown': max_drawdown,
+        'CAGR': cagr,
+        'Win Rate': win_rate
+    }
     """Calculates key performance metrics, mathematically adjusted for 5-day holding periods."""
     df = df.copy()
 
@@ -192,8 +276,6 @@ def compute_metrics(df, top_k_percent=0.10):
     if portfolio_5d_returns.empty:
         return {metric: 0 for metric in ['Sharpe Ratio', 'Calmar Ratio', 'Maximum Drawdown', 'CAGR', 'Win Rate']}
 
-    # CRITICAL FIX: Approximate the daily return from the 5-day holding period 
-    # to prevent overlapping geometric compounding explosion.
     daily_returns = (1 + portfolio_5d_returns) ** (1/5) - 1
 
     cumulative_returns = (1 + daily_returns).cumprod()
@@ -246,8 +328,8 @@ if uploaded_file is not None:
             )
             top_k_percent = top_k / 100.0
 
-            st.markdown("#### Key Performance Metrics")
-            metrics = compute_metrics(df_results, top_k_percent=top_k_percent)
+            st.markdown("#### Key Performance Metrics (Net of Costs)")
+            metrics = compute_metrics(df_results, top_k_percent=top_k_percent, tc_bps=tc_bps, slip_bps=slip_bps)
             
             cols = st.columns(5)
             cols[0].metric("Sharpe Ratio", f"{metrics['Sharpe Ratio']:.2f}")
@@ -256,32 +338,29 @@ if uploaded_file is not None:
             cols[3].metric("Max Drawdown", f"{metrics['Maximum Drawdown']:.2%}")
             cols[4].metric("Win Rate", f"{metrics['Win Rate']:.2%}")
             
-            st.markdown("#### Cumulative Strategy Return")
+            st.markdown("#### Cumulative Strategy Return (Net of Costs)")
             
-            def plot_cumulative_returns(df, top_k_percent=0.10):
+            def plot_cumulative_returns(df, top_k_percent=0.10, tc_bps: float = 10.0, slip_bps: float = 5.0):
                 df = df.copy()
-                daily_returns = (
-                    df.groupby('Date')
-                    .apply(lambda x: x.sort_values('RankedSignal', ascending=False)
-                                    .head(int(len(x) * top_k_percent))['Target'].mean())
-                ).dropna()
-
-                if daily_returns.empty:
+                daily_gross = _compute_daily_gross_returns(df, top_k_percent)
+                if daily_gross.empty:
                     st.warning("Could not compute cumulative returns. This may be due to insufficient data to calculate future returns (Target).")
                     return None
+                daily_turnover = _compute_daily_turnover(df, top_k_percent)
+                daily_net = _apply_costs_to_returns(daily_gross, daily_turnover, tc_bps, slip_bps)
 
-                cum_returns = (1 + daily_returns).cumprod()
+                cum_returns = (1 + daily_net).cumprod()
                 fig, ax = plt.subplots(figsize=(12, 6))
-                ax.plot(cum_returns.index, cum_returns.values, label=f"Top {int(top_k_percent*100)}% Strategy", color='navy')
+                ax.plot(cum_returns.index, cum_returns.values, label=f"Top {int(top_k_percent*100)}% Strategy (Net)", color='navy')
                 ax.set_xlabel("Date")
                 ax.set_ylabel("Cumulative Return")
-                ax.set_title("Simulated Cumulative Strategy Return")
+                ax.set_title("Simulated Cumulative Strategy Return (Net of Costs)")
                 ax.grid(True)
                 ax.legend()
                 plt.tight_layout()
                 return fig
 
-            fig = plot_cumulative_returns(df_results, top_k_percent=top_k_percent)
+            fig = plot_cumulative_returns(df_results, top_k_percent=top_k_percent, tc_bps=tc_bps, slip_bps=slip_bps)
             if fig:
                 st.pyplot(fig)
 
@@ -293,4 +372,3 @@ elif single_stock_form is not None:
 
 else:
     st.info("Please choose an analysis mode from the sidebar to get started.")
-
