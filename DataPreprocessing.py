@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 
+
 def compute_rsi(series: pd.Series, window: int = 14):
     """Computes the Relative Strength Index (RSI)."""
     delta = series.diff()
@@ -11,10 +12,12 @@ def compute_rsi(series: pd.Series, window: int = 14):
     rs = avg_gain / (avg_loss + 1e-9)
     return 100 - (100 / (1 + rs))
 
+
 def downside_vol(x):
     """Computes downside volatility."""
     x = x.dropna()
     return np.sqrt(np.mean(np.square(np.minimum(x, 0)))) if len(x) > 0 else np.nan
+
 
 def add_features(df):
     """
@@ -42,27 +45,30 @@ def add_features(df):
         group['RSI_14'] = compute_rsi(group['close'], window=14)
         group['Skew_20d'] = group['Ret_1d'].rolling(20).skew()
         group['RollingMean_5d'] = group['close'].rolling(5).mean()
-        
+
         return group
 
     df = df.groupby('Name', group_keys=False).apply(build_features)
-    
+
     # --- Cross-sectional Features ---
     if not df.empty:
-        df['Momentum_5d_z'] = df.groupby('Date')['Momentum_5d'].transform(lambda x: (x - x.mean()) / (x.std() + 1e-9))
+        df['Momentum_5d_z'] = df.groupby('Date')['Momentum_5d'].transform(
+            lambda x: (x - x.mean()) / (x.std() + 1e-9)
+        )
 
     # --- HISTORICAL Market Calculation (NO LEAKAGE) ---
     df['HistoricalMarketReturn'] = df.groupby('Date')['Ret_1d'].transform('mean')
 
+    # ✅ FIXED: use reset_index(level=0, drop=True) to preserve original
+    # row indices so the beta values align correctly back onto df
     df['Beta_20d'] = df.groupby('Name', group_keys=False).apply(
         lambda group: group['Ret_1d'].rolling(20).corr(group['HistoricalMarketReturn'])
-    ).reset_index(drop=True)
+    ).reset_index(level=0, drop=True)
 
     # --- Target Calculation ---
     # Target is strictly separated from feature calculation
     df['Target'] = df.groupby('Name')['close'].shift(-5) / df['close'] - 1
-    df['Target'] = df['Target'].clip(-0.15, 0.15) 
+    df['Target'] = df['Target'].clip(-0.15, 0.15)
     df['Target_demeaned'] = df.groupby('Date')['Target'].transform(lambda x: x - x.mean())
 
     return df
-
