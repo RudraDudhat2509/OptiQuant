@@ -46,10 +46,10 @@ It's a full **quantitative research pipeline** — from raw OHLCV data → featu
           │  ┌────────────────────────────────────┐  │
           │  │  Feature Engineering (12+ signals) │  │
           │  │  • Momentum (1d, 5d, 20d returns)  │  │
-          │  │  • Volatility (rolling std)         │  │
-          │  │  • RSI (14-period)                  │  │
-          │  │  • Risk-Adjusted Metrics            │  │
-          │  │  • Lookahead-Bias-Free Construction │  │
+          │  │  • Volatility (rolling std)        │  │
+          │  │  • RSI (14-period)                 │  │
+          │  │  • Risk-Adjusted Metrics           │  │
+          │  │  • Lookahead-BiasFree Construction │  │
           │  └────────────────────────────────────┘  │
           └─────────────────┬────────────────────────┘
                             │
@@ -58,7 +58,7 @@ It's a full **quantitative research pipeline** — from raw OHLCV data → featu
           │          ENSEMBLE MODEL LAYER            │
           │                                          │
           │   LightGBM ──┐                           │
-          │   CatBoost ──┼──► Weighted Blend ──►    │
+          │   CatBoost ──┼──► Weighted Blend ──►     │
           │   RandomForest┘     Signal Score         │
           └─────────────────┬────────────────────────┘
                             │
