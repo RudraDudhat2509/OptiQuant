@@ -71,5 +71,8 @@ def add_features(df):
     df['Target'] = df.groupby('Name')['close'].shift(-5) / df['close'] - 1
     df['Target'] = df['Target'].clip(-0.15, 0.15)
     df['Target_demeaned'] = df.groupby('Date')['Target'].transform(lambda x: x - x.mean())
+    df['Date'] = pd.to_datetime(df['Date'])
+
 
     return df
+
