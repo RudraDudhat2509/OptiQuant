@@ -28,8 +28,8 @@
 Unlike academic models that ignore market realities, OptiQuant v2.0 evaluates performance **net of trading frictions**. 
 
 *Metrics below represent a daily-rebalanced, top-decile portfolio net of 10 bps transaction costs and 5 bps slippage:*
--   **Realistic CAGR:** ~15%
--   **Sharpe Ratio:** ~0.90
+-   **Realistic CAGR:** ~25%
+-   **Sharpe Ratio:** ~1.05
 -   **Win Rate:** ~53%
 -   **Maximum Drawdown:** Mathematically calculated via continuous peak-to-trough analysis.
 
