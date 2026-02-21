@@ -93,7 +93,7 @@ Three powerful models blend their predictions via weighted averaging — not jus
 | **Random Forest** | Decorrelated trees; strong regularization via bagging |
 
 ### 📐 Feature Engineering (Lookahead-Bias-Free)
-All features are constructed using **only past data** — no future values leak into predictions. This is one of the most common and fatal mistakes in quantitative research. OptiQuant handles it correctly.
+All features are constructed using **only past data**, no future values leak into predictions. This is one of the most common and fatal mistakes in quantitative research. OptiQuant handles it correctly.
 
 Engineered signals include:
 - Rolling momentum (1d, 5d, 20d returns)
